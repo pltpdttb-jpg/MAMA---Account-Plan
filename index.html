@@ -1,13 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
-  Users, Calculator, FileText, Shield, 
-  TrendingUp, Save, ChevronRight, ChevronLeft, 
-  CheckCircle, AlertTriangle, Menu, User, 
-  Activity, Briefcase, Home, Award, DollarSign,
-  PieChart, HeartPulse, RefreshCw, Plus, Trash2, Heart, Zap,
-  Check, Info, Share2, ClipboardList, Wallet, GraduationCap, Coins,
-  HomeIcon, Car, CreditCard, Landmark, BarChart3, Target, 
-  Stethoscope, Umbrella, HardHat
+  Users, Calculator, Shield, 
+  TrendingUp, ChevronRight, ChevronLeft, 
+  CheckCircle, User, 
+  Activity, Home, DollarSign,
+  HeartPulse, RefreshCw, Plus, Zap,
+  Check, Info, Wallet, Coins,
+  HomeIcon, Car, CreditCard, BarChart3
 } from 'lucide-react';
 import { 
   Radar, RadarChart, PolarGrid, 
@@ -15,23 +14,27 @@ import {
 } from 'recharts';
 
 // --- Helper Functions ---
+// ฟังก์ชันจัดรูปแบบเงิน (Currency Formatter)
 const formatCurrency = (amount) => {
   if (amount === undefined || amount === null || isNaN(amount)) return '฿0';
   return new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB', maximumFractionDigits: 0 }).format(amount);
 };
 
+// ฟังก์ชันแปลงค่า Input เป็นตัวเลข
 const parseInputNumber = (val) => {
   if (typeof val === 'number') return val;
   const clean = val.replace(/[^0-9]/g, '');
   return clean ? parseInt(clean, 10) : 0;
 };
 
+// ฟังก์ชันแสดงผลตัวเลขพร้อมลูกน้ำ
 const displayFormattedNumber = (val) => {
   if (!val && val !== 0) return '';
   return val.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 };
 
-// --- Financial Logic ---
+// --- Financial Logic Core ---
+// แกนหลักในการคำนวณทางแศรษฐศาสตร์และการเงินของระบบ
 const FinancialLogic = {
   calculateScores: (data, mode) => {
     const monthlyIncome = data.income || 1;
@@ -42,10 +45,11 @@ const FinancialLogic = {
     let liquidAssets = 0;
     let investAssets = 0;
 
+    // คำนวณสินทรัพย์ตามโหมด (Quick vs Detailed)
     if (mode === 'QUICK') {
       totalAssets = data.totalAssetQuick || 0;
       totalDebt = data.totalDebtQuick || 0;
-      liquidAssets = totalAssets * 0.3;
+      liquidAssets = totalAssets * 0.3; // สมมติฐานสัดส่วนสำหรับ Quick Mode
       investAssets = totalAssets * 0.7;
     } else {
       liquidAssets = data.assetCash || 0;
@@ -54,6 +58,7 @@ const FinancialLogic = {
       totalDebt = (data.debtHome || 0) + (data.debtCar || 0) + (data.debtPersonal || 0);
     }
     
+    // คำนวณความคุ้มครองเดิมที่มีอยู่
     const lifeCoverage = (data.existingInsuranceDetails || [])
       .filter(i => ['ประกันชีวิต', 'ประกันบำนาญ', 'ประกันสะสมทรัพย์', 'ประกันชีวิตแบบชั่วระยะเวลา'].includes(i.type))
       .reduce((sum, i) => sum + i.coverage, 0);
@@ -62,11 +67,13 @@ const FinancialLogic = {
       .filter(i => ['ประกันสุขภาพ', 'ประกันโรคร้ายแรง'].includes(i.type))
       .reduce((sum, i) => sum + i.coverage, 0);
     
+    // 1. Health Score Calculation
     let healthScore = 0;
     if (healthCoverage > 0) healthScore += 50;
     const emergencyMonths = liquidAssets / (monthlyExpense || 1);
     healthScore += Math.min(50, emergencyMonths * 10);
 
+    // 2. Wealth Score Calculation
     let wealthScore = 0;
     const savingsRate = ((monthlyIncome - monthlyExpense) / monthlyIncome) * 100;
     wealthScore += Math.min(40, savingsRate > 0 ? savingsRate : 0);
@@ -75,14 +82,27 @@ const FinancialLogic = {
     const debtToAsset = (totalDebt / (totalAssets || 1));
     wealthScore += Math.max(0, (1 - debtToAsset) * 20);
 
+    // 3. Gap Analysis
     const needs = (monthlyExpense * 12 * 5) + totalDebt + (data.children * 1000000);
     const gap = Math.max(0, needs - lifeCoverage);
     const protectionRatio = lifeCoverage / (needs || 1);
 
     return {
-      health: { score: Math.round(healthScore), label: healthScore > 70 ? 'ดีเยี่ยม' : healthScore > 40 ? 'พอใช้' : 'ควรวางแผนเพิ่ม', coverage: healthCoverage },
-      wealth: { score: Math.round(wealthScore), label: wealthScore > 70 ? 'มั่งคั่ง' : wealthScore > 40 ? 'สมดุล' : 'ต้องเร่งออม' },
-      gap: { amount: gap, ratio: protectionRatio, label: gap > 0 ? 'คุ้มครองไม่เพียงพอ' : 'คุ้มครองครอบคลุม', lifeTotal: lifeCoverage },
+      health: { 
+        score: Math.round(healthScore), 
+        label: healthScore > 70 ? 'ดีเยี่ยม' : healthScore > 40 ? 'พอใช้' : 'ควรวางแผนเพิ่ม', 
+        coverage: healthCoverage 
+      },
+      wealth: { 
+        score: Math.round(wealthScore), 
+        label: wealthScore > 70 ? 'มั่งคั่ง' : wealthScore > 40 ? 'สมดุล' : 'ต้องเร่งออม' 
+      },
+      gap: { 
+        amount: gap, 
+        ratio: protectionRatio, 
+        label: gap > 0 ? 'คุ้มครองไม่เพียงพอ' : 'คุ้มครองครอบคลุม', 
+        lifeTotal: lifeCoverage 
+      },
       chartData: [
         { subject: 'กลัวเจ็บ', A: healthScore, fullMark: 100 },
         { subject: 'กลัวจน', A: wealthScore, fullMark: 100 },
@@ -94,7 +114,8 @@ const FinancialLogic = {
   }
 };
 
-// --- Shared Credit Component ---
+// --- Shared UI Components ---
+
 const DeveloperCredit = () => (
   <div className="py-2 text-center">
     <p className="text-[8px] font-black text-blue-900/30 uppercase tracking-[0.3em]">
@@ -103,7 +124,6 @@ const DeveloperCredit = () => (
   </div>
 );
 
-// --- Components ---
 const Header = ({ onHome, canGoBack, onBack }) => (
   <div className="bg-white/70 backdrop-blur-lg sticky top-0 z-50 border-b border-gray-100">
     <div className="max-w-md mx-auto px-4 py-4 flex justify-between items-center">
@@ -193,6 +213,7 @@ const FormLayout = ({ title, children, onNext, onPrev, step, totalSteps }) => {
   );
 };
 
+// --- Main Application Component ---
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('HOME');
   const [mode, setMode] = useState('QUICK'); 
@@ -209,7 +230,16 @@ export default function App() {
   const [subMode, setSubMode] = useState('ANALYSIS');
 
   const navigateTo = (screen) => { setHistory([...history, screen]); setCurrentScreen(screen); };
-  const goBack = () => { if (history.length > 1) { const h = [...history]; h.pop(); setHistory(h); setCurrentScreen(h[h.length-1]); } };
+  
+  const goBack = () => { 
+    if (history.length > 1) { 
+      const h = [...history]; 
+      h.pop(); 
+      setHistory(h); 
+      setCurrentScreen(h[h.length-1]); 
+    } 
+  };
+  
   const goHome = () => { 
     setHistory(['HOME']); 
     setCurrentScreen('HOME'); 
