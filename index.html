@@ -1,0 +1,613 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  Users, Calculator, FileText, Shield, 
+  TrendingUp, Save, ChevronRight, ChevronLeft, 
+  CheckCircle, AlertTriangle, Menu, User, 
+  Activity, Briefcase, Home, Award, DollarSign,
+  PieChart, HeartPulse, RefreshCw, Plus, Trash2, Heart, Zap,
+  Check, Info, Share2, ClipboardList, Wallet, GraduationCap, Coins,
+  HomeIcon, Car, CreditCard, Landmark, BarChart3, Target, 
+  Stethoscope, Umbrella, HardHat
+} from 'lucide-react';
+import { 
+  Radar, RadarChart, PolarGrid, 
+  PolarAngleAxis, ResponsiveContainer
+} from 'recharts';
+
+// --- Helper Functions ---
+const formatCurrency = (amount) => {
+  if (amount === undefined || amount === null || isNaN(amount)) return '฿0';
+  return new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB', maximumFractionDigits: 0 }).format(amount);
+};
+
+const parseInputNumber = (val) => {
+  if (typeof val === 'number') return val;
+  const clean = val.replace(/[^0-9]/g, '');
+  return clean ? parseInt(clean, 10) : 0;
+};
+
+const displayFormattedNumber = (val) => {
+  if (!val && val !== 0) return '';
+  return val.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+};
+
+// --- Financial Logic ---
+const FinancialLogic = {
+  calculateScores: (data, mode) => {
+    const monthlyIncome = data.income || 1;
+    const monthlyExpense = data.expenses || 0;
+    
+    let totalAssets = 0;
+    let totalDebt = 0;
+    let liquidAssets = 0;
+    let investAssets = 0;
+
+    if (mode === 'QUICK') {
+      totalAssets = data.totalAssetQuick || 0;
+      totalDebt = data.totalDebtQuick || 0;
+      liquidAssets = totalAssets * 0.3;
+      investAssets = totalAssets * 0.7;
+    } else {
+      liquidAssets = data.assetCash || 0;
+      investAssets = (data.assetStock || 0) + (data.assetProperty || 0) + (data.assetAlternative || 0);
+      totalAssets = liquidAssets + investAssets;
+      totalDebt = (data.debtHome || 0) + (data.debtCar || 0) + (data.debtPersonal || 0);
+    }
+    
+    const lifeCoverage = (data.existingInsuranceDetails || [])
+      .filter(i => ['ประกันชีวิต', 'ประกันบำนาญ', 'ประกันสะสมทรัพย์', 'ประกันชีวิตแบบชั่วระยะเวลา'].includes(i.type))
+      .reduce((sum, i) => sum + i.coverage, 0);
+
+    const healthCoverage = (data.existingInsuranceDetails || [])
+      .filter(i => ['ประกันสุขภาพ', 'ประกันโรคร้ายแรง'].includes(i.type))
+      .reduce((sum, i) => sum + i.coverage, 0);
+    
+    let healthScore = 0;
+    if (healthCoverage > 0) healthScore += 50;
+    const emergencyMonths = liquidAssets / (monthlyExpense || 1);
+    healthScore += Math.min(50, emergencyMonths * 10);
+
+    let wealthScore = 0;
+    const savingsRate = ((monthlyIncome - monthlyExpense) / monthlyIncome) * 100;
+    wealthScore += Math.min(40, savingsRate > 0 ? savingsRate : 0);
+    const investmentRatio = (investAssets / (totalAssets || 1)) * 40;
+    wealthScore += Math.min(40, investmentRatio);
+    const debtToAsset = (totalDebt / (totalAssets || 1));
+    wealthScore += Math.max(0, (1 - debtToAsset) * 20);
+
+    const needs = (monthlyExpense * 12 * 5) + totalDebt + (data.children * 1000000);
+    const gap = Math.max(0, needs - lifeCoverage);
+    const protectionRatio = lifeCoverage / (needs || 1);
+
+    return {
+      health: { score: Math.round(healthScore), label: healthScore > 70 ? 'ดีเยี่ยม' : healthScore > 40 ? 'พอใช้' : 'ควรวางแผนเพิ่ม', coverage: healthCoverage },
+      wealth: { score: Math.round(wealthScore), label: wealthScore > 70 ? 'มั่งคั่ง' : wealthScore > 40 ? 'สมดุล' : 'ต้องเร่งออม' },
+      gap: { amount: gap, ratio: protectionRatio, label: gap > 0 ? 'คุ้มครองไม่เพียงพอ' : 'คุ้มครองครอบคลุม', lifeTotal: lifeCoverage },
+      chartData: [
+        { subject: 'กลัวเจ็บ', A: healthScore, fullMark: 100 },
+        { subject: 'กลัวจน', A: wealthScore, fullMark: 100 },
+        { subject: 'กลัวตาย', A: Math.min(100, protectionRatio * 100), fullMark: 100 },
+      ],
+      totalAssets,
+      totalDebt
+    };
+  }
+};
+
+// --- Shared Credit Component ---
+const DeveloperCredit = () => (
+  <div className="py-2 text-center">
+    <p className="text-[8px] font-black text-blue-900/30 uppercase tracking-[0.3em]">
+      PRU Academy [ttb Training team]
+    </p>
+  </div>
+);
+
+// --- Components ---
+const Header = ({ onHome, canGoBack, onBack }) => (
+  <div className="bg-white/70 backdrop-blur-lg sticky top-0 z-50 border-b border-gray-100">
+    <div className="max-w-md mx-auto px-4 py-4 flex justify-between items-center">
+      <div className="flex items-center space-x-3">
+        {canGoBack && (
+          <button onClick={onBack} className="p-2 rounded-full hover:bg-gray-100 transition">
+            <ChevronLeft size={20} className="text-blue-900" />
+          </button>
+        )}
+        <h1 className="font-bold text-blue-900 text-lg">Smart Advisor</h1>
+      </div>
+      <button onClick={onHome} className="p-2 rounded-full hover:bg-gray-100 text-orange-500">
+        <Home size={20} />
+      </button>
+    </div>
+  </div>
+);
+
+const InputField = ({ label, value, onChange, placeholder, icon: Icon, suffix = "" }) => (
+  <div className="space-y-1.5">
+    <label className="text-[10px] font-black text-blue-900/60 uppercase tracking-widest ml-1">{label}</label>
+    <div className="relative group">
+      {Icon && <div className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400 group-focus-within:text-blue-900 transition-colors"><Icon size={18} /></div>}
+      <input 
+        type="text" 
+        inputMode="numeric"
+        className={`w-full p-4 ${Icon ? 'pl-12' : 'pl-4'} ${suffix ? 'pr-12' : 'pr-4'} bg-white border border-gray-100 rounded-2xl text-blue-900 font-bold focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none transition shadow-sm`}
+        value={displayFormattedNumber(value)} 
+        onChange={(e) => onChange(parseInputNumber(e.target.value))} 
+        placeholder={placeholder} 
+      />
+      {suffix && <div className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-[10px]">{suffix}</div>}
+    </div>
+  </div>
+);
+
+const CheckboxGroup = ({ label, options, selected, onToggle }) => (
+  <div className="space-y-3">
+    <label className="text-[10px] font-black text-blue-900/60 uppercase tracking-widest ml-1">{label}</label>
+    <div className="grid grid-cols-1 gap-2">
+      {options.map(opt => {
+        const isSelected = Array.isArray(selected) ? selected.includes(opt.value || opt) : selected === (opt.value || opt);
+        return (
+          <button
+            key={opt.value || opt}
+            onClick={() => onToggle(opt.value || opt)}
+            className={`p-4 rounded-2xl border-2 text-left flex justify-between items-center transition-all duration-300 ${
+              isSelected 
+                ? 'bg-white border-orange-500 text-blue-900 shadow-xl shadow-orange-500/10 scale-[1.02]' 
+                : 'bg-white border-gray-100 text-gray-500 hover:border-blue-100'
+            }`}
+          >
+            <div className="flex items-center space-x-3">
+               <span className={`text-sm font-bold ${isSelected ? 'text-blue-900' : ''}`}>{opt.label || opt}</span>
+            </div>
+            {isSelected ? <CheckCircle size={20} className="text-orange-500" /> : <div className="w-5 h-5 rounded-full border-2 border-gray-100" />}
+          </button>
+        );
+      })}
+    </div>
+  </div>
+);
+
+const FormLayout = ({ title, children, onNext, onPrev, step, totalSteps }) => {
+  return (
+    <div className="flex flex-col h-full bg-slate-50">
+      <div className="px-6 py-4 bg-white border-b border-gray-50">
+        <div className="flex justify-between items-end mb-2">
+          <span className="text-xl font-black text-blue-900">{title}</span>
+          <span className="text-[10px] font-bold text-blue-400 uppercase">STEP {step} OF {totalSteps}</span>
+        </div>
+        <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
+          <div className="h-full bg-orange-500 transition-all duration-500" style={{ width: `${(step/totalSteps)*100}%` }}></div>
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {children}
+        <DeveloperCredit />
+      </div>
+      <div className="p-4 bg-white border-t flex space-x-3">
+        {onPrev && <button onClick={onPrev} className="flex-1 py-4 rounded-2xl font-bold text-gray-400 bg-gray-50 active:scale-95 transition-all">ย้อนกลับ</button>}
+        <button onClick={onNext} className="flex-[2] py-4 bg-blue-900 text-white rounded-2xl font-bold shadow-lg shadow-blue-900/20 flex justify-center items-center space-x-2 active:scale-95 transition-all">
+          <span>ถัดไป</span><ChevronRight size={18} />
+        </button>
+      </div>
+    </div>
+  );
+};
+
+export default function App() {
+  const [currentScreen, setCurrentScreen] = useState('HOME');
+  const [mode, setMode] = useState('QUICK'); 
+  const [history, setHistory] = useState(['HOME']);
+  const [formData, setFormData] = useState({
+    name: '', age: 0, gender: 'ชาย', income: 0, expenses: 0, 
+    totalAssetQuick: 0, totalDebtQuick: 0,
+    assetCash: 0, assetStock: 0, assetProperty: 0, assetAlternative: 0,
+    debtHome: 0, debtCar: 0, debtPersonal: 0,
+    hasInsurance: false, existingInsuranceDetails: [], children: 0, goals: [],
+  });
+  const [results, setResults] = useState(null);
+  const [selectedPlans, setSelectedPlans] = useState([]);
+  const [subMode, setSubMode] = useState('ANALYSIS');
+
+  const navigateTo = (screen) => { setHistory([...history, screen]); setCurrentScreen(screen); };
+  const goBack = () => { if (history.length > 1) { const h = [...history]; h.pop(); setHistory(h); setCurrentScreen(h[h.length-1]); } };
+  const goHome = () => { 
+    setHistory(['HOME']); 
+    setCurrentScreen('HOME'); 
+    setFormData({ 
+      name: '', age: 0, gender: 'ชาย', income: 0, expenses: 0, 
+      totalAssetQuick: 0, totalDebtQuick: 0,
+      assetCash: 0, assetStock: 0, assetProperty: 0, assetAlternative: 0,
+      debtHome: 0, debtCar: 0, debtPersonal: 0,
+      hasInsurance: false, existingInsuranceDetails: [], children: 0, goals: [] 
+    });
+    setResults(null);
+    setSelectedPlans([]);
+  };
+
+  const startAnalysis = () => {
+    const scores = FinancialLogic.calculateScores(formData, mode);
+    const products = [
+      { id: 'life_p', name: 'ประกันชีวิตตลอดชีพ (Whole Life)', coverage: scores.gap.amount || 1000000, reason: 'เพื่อเป็นมรดกและคุ้มครองความเสี่ยงให้ครอบครัวในระยะยาว' },
+      { id: 'health_m', name: 'ประกันสุขภาพแบบเหมาจ่าย', coverage: 5000000, reason: 'ครอบคลุมค่ารักษาพยาบาลทั้งโรคทั่วไปและโรคร้ายแรง' },
+      { id: 'pension', name: 'ประกันบำนาญ (Pension)', coverage: (formData.income||0) * 12 * 5, reason: 'สร้างกระแสเงินสดหลังเกษียณที่แน่นอนและสม่ำเสมอ' },
+      { id: 'saving_d', name: 'ประกันสะสมทรัพย์แบบมีเงินปันผล', coverage: 500000, reason: 'ออมเงินพร้อมรับความคุ้มครองและโอกาสรับผลตอบแทนเพิ่ม' },
+      { id: 'ci_protect', name: 'ประกันโรคร้ายแรง (CI)', coverage: 2000000, reason: 'เตรียมเงินก้อนเพื่อค่าใช้จ่ายนอกเหนือจากค่ารักษาพยาบาลเมื่อพบโรคร้าย' },
+      { id: 'term', name: 'ประกันชีวิตแบบชั่วระยะเวลา', coverage: scores.gap.amount, reason: 'เน้นความคุ้มครองสูงในราคาประหยัด เหมาะสำหรับช่วงที่มีภาระหนี้สูง' }
+    ];
+    setResults({ ...scores, products });
+    navigateTo('RESULTS');
+  };
+
+  const togglePlan = (plan) => {
+    setSelectedPlans(prev => {
+      const exists = prev.find(p => p.id === plan.id);
+      if (exists) return prev.filter(p => p.id !== plan.id);
+      if (prev.length < 3) return [...prev, plan];
+      return [prev[1], prev[2], plan];
+    });
+  };
+
+  const renderScreen = () => {
+    switch (currentScreen) {
+      case 'HOME': return (
+        <div className="flex flex-col h-full bg-white p-8 items-center justify-center animate-in fade-in zoom-in-95 duration-700">
+          <div className="w-20 h-20 bg-blue-900 rounded-[28px] shadow-2xl shadow-blue-900/20 flex items-center justify-center mb-8 rotate-3">
+            <Shield size={40} className="text-white" />
+          </div>
+          <h1 className="text-4xl font-black text-blue-900 mb-2">Smart Advisor</h1>
+          <p className="text-sm text-gray-400 mb-12 text-center font-medium leading-relaxed">วิเคราะห์ความเสี่ยงและวางแผนประกันภัย<br/>เลือกโหมดที่เหมาะกับเวลาของคุณ</p>
+          <div className="w-full space-y-4 mb-8">
+            <button onClick={() => {setMode('QUICK'); navigateTo('FORM_PERSONAL');}} className="w-full bg-white border border-gray-100 text-blue-900 p-6 rounded-[32px] flex items-center justify-between group shadow-sm active:scale-95 transition-all">
+              <div className="flex items-center space-x-4"><div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600"><Zap size={24} /></div><div className="text-left"><p className="font-black text-lg">Quick Mode</p><p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest">รวดเร็ว • 4 Steps</p></div></div>
+              <ChevronRight size={20} className="text-gray-300" />
+            </button>
+            <button onClick={() => {setMode('DETAILED'); navigateTo('FORM_PERSONAL');}} className="w-full bg-blue-900 text-white p-6 rounded-[32px] flex items-center justify-between group shadow-xl shadow-blue-900/20 active:scale-95 transition-all">
+              <div className="flex items-center space-x-4"><div className="w-12 h-12 bg-blue-800 rounded-2xl flex items-center justify-center text-orange-500"><Activity size={24} /></div><div className="text-left"><p className="font-black text-lg">Detailed Mode</p><p className="text-[10px] text-blue-300 uppercase font-bold tracking-widest">เจาะลึก • 7 Steps</p></div></div>
+              <ChevronRight size={20} className="text-blue-700" />
+            </button>
+          </div>
+          <DeveloperCredit />
+        </div>
+      );
+
+      case 'FORM_PERSONAL': return (
+        <FormLayout title="ข้อมูลส่วนตัว" step={1} totalSteps={mode === 'QUICK' ? 4 : 7} onNext={() => navigateTo('FORM_FINANCIAL')}>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-black text-blue-900/60 uppercase tracking-widest ml-1">ชื่อ-นามสกุล</label>
+            <div className="relative">
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400"><User size={18} /></div>
+              <input type="text" className="w-full p-4 pl-12 bg-white border border-gray-100 rounded-2xl text-blue-900 font-bold outline-none shadow-sm" value={formData.name} onChange={v => setFormData({...formData, name: v.target.value})} placeholder="ระบุชื่อของคุณ" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <InputField label="อายุ" value={formData.age} onChange={v => setFormData({...formData, age: v})} icon={Activity} suffix="ปี" />
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black text-blue-900/60 uppercase tracking-widest ml-1">เพศ</label>
+              <div className="flex bg-gray-50 p-1 rounded-xl h-[58px]">
+                {['ชาย', 'หญิง'].map(g => (
+                  <button key={g} onClick={() => setFormData({...formData, gender: g})} className={`flex-1 rounded-lg text-sm font-bold transition-all ${formData.gender === g ? 'bg-white text-blue-900 shadow-sm' : 'text-gray-400'}`}>{g}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <InputField label="รายได้ต่อเดือน" value={formData.income} onChange={v => setFormData({...formData, income: v})} icon={DollarSign} suffix="บาท" />
+          <InputField label="รายจ่ายต่อเดือน" value={formData.expenses} onChange={v => setFormData({...formData, expenses: v})} icon={Calculator} suffix="บาท" />
+        </FormLayout>
+      );
+
+      case 'FORM_FINANCIAL': 
+        if (mode === 'QUICK') {
+          return (
+            <FormLayout title="การเงินโดยรวม" step={2} totalSteps={4} onNext={() => navigateTo('FORM_FAMILY')} onPrev={goBack}>
+              <InputField label="สินทรัพย์รวม" value={formData.totalAssetQuick} onChange={v => setFormData({...formData, totalAssetQuick: v})} icon={Wallet} suffix="บาท" />
+              <InputField label="หนี้สินรวม" value={formData.totalDebtQuick} onChange={v => setFormData({...formData, totalDebtQuick: v})} icon={CreditCard} suffix="บาท" />
+            </FormLayout>
+          );
+        } else {
+          return (
+            <FormLayout title="สินทรัพย์ละเอียด" step={2} totalSteps={7} onNext={() => navigateTo('FORM_DEBT_DETAIL')} onPrev={goBack}>
+              <InputField label="เงินสด / เงินฝาก" value={formData.assetCash} onChange={v => setFormData({...formData, assetCash: v})} icon={Wallet} suffix="บาท" />
+              <InputField label="หุ้น / กองทุน / พันธบัตร" value={formData.assetStock} onChange={v => setFormData({...formData, assetStock: v})} icon={BarChart3} suffix="บาท" />
+              <InputField label="บ้าน / ที่ดิน (เพื่อลงทุน)" value={formData.assetProperty} onChange={v => setFormData({...formData, assetProperty: v})} icon={HomeIcon} suffix="บาท" />
+              <InputField label="ทองคำ / สินทรัพย์ทางเลือก" value={formData.assetAlternative} onChange={v => setFormData({...formData, assetAlternative: v})} icon={Coins} suffix="บาท" />
+            </FormLayout>
+          );
+        }
+
+      case 'FORM_DEBT_DETAIL': 
+        return (
+          <FormLayout title="หนี้สินละเอียด" step={3} totalSteps={7} onNext={() => navigateTo('FORM_FAMILY')} onPrev={goBack}>
+            <InputField label="หนี้ที่อยู่อาศัย" value={formData.debtHome} onChange={v => setFormData({...formData, debtHome: v})} icon={HomeIcon} suffix="บาท" />
+            <InputField label="หนี้รถยนต์ / เช่าซื้อ" value={formData.debtCar} onChange={v => setFormData({...formData, debtCar: v})} icon={Car} suffix="บาท" />
+            <InputField label="หนี้บัตรเครดิต / สินเชื่อบุคคล" value={formData.debtPersonal} onChange={v => setFormData({...formData, debtPersonal: v})} icon={CreditCard} suffix="บาท" />
+          </FormLayout>
+        );
+
+      case 'FORM_FAMILY': 
+        const goalOptions = mode === 'DETAILED' ? [
+          {label:'จัดการภาษี (สูงสุด)',value:'TAX'}, 
+          {label:'วางแผนเกษียณ (กระแสเงินสด)',value:'RETIRE'}, 
+          {label:'ส่งต่อมรดก / คุ้มครองครอบครัว',value:'HERIT'}, 
+          {label:'สวัสดิการค่ารักษาพยาบาลระดับพรีเมียม',value:'HEALTH_PREMIUM'},
+          {label:'ทุนการศึกษาบุตรในอนาคต',value:'EDUCATION'},
+          {label:'กองทุนสำรองโรคร้ายแรง',value:'CI_FUND'}
+        ] : [
+          {label:'จัดการภาษี',value:'TAX'}, 
+          {label:'วางแผนเกษียณ',value:'RETIRE'}, 
+          {label:'มรดก',value:'HERIT'}, 
+          {label:'ค่ารักษาพยาบาล',value:'HEALTH'}
+        ];
+        return (
+          <FormLayout title="ครอบครัวและเป้าหมาย" step={mode === 'QUICK' ? 3 : 4} totalSteps={mode === 'QUICK' ? 4 : 7} onNext={() => navigateTo('FORM_INSURANCE')} onPrev={goBack}>
+            <InputField label="จำนวนบุตร (คน)" value={formData.children} onChange={v => setFormData({...formData, children: v})} icon={Users} />
+            <CheckboxGroup label="เป้าหมายการวางแผน" options={goalOptions} selected={formData.goals} onToggle={g => {
+              const current = formData.goals;
+              setFormData({...formData, goals: current.includes(g) ? current.filter(i => i !== g) : [...current, g]});
+            }} />
+          </FormLayout>
+        );
+
+      case 'FORM_INSURANCE':
+        const insuranceTypes = mode === 'DETAILED' ? 
+          ['ประกันชีวิต', 'ประกันสุขภาพ', 'ประกันโรคร้ายแรง', 'ประกันบำนาญ', 'ประกันสะสมทรัพย์', 'ประกันอุบัติเหตุ'] : 
+          ['ประกันชีวิต', 'ประกันสุขภาพ', 'ประกันบำนาญ'];
+        return (
+          <FormLayout title="ประกันที่มีอยู่" step={mode === 'QUICK' ? 4 : 5} totalSteps={mode === 'QUICK' ? 4 : 7} onNext={() => mode === 'QUICK' ? startAnalysis() : navigateTo('REVIEW')} onPrev={goBack}>
+            <div className="p-4 bg-blue-900 rounded-[24px] text-white flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-3"><Shield size={24} className="text-blue-300" /><span className="font-bold">มีประกันอยู่แล้ว</span></div>
+              <button onClick={() => setFormData({...formData, hasInsurance: !formData.hasInsurance})} className={`w-12 h-6 rounded-full relative transition-colors ${formData.hasInsurance ? 'bg-orange-500' : 'bg-blue-800'}`}><div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${formData.hasInsurance ? 'left-7' : 'left-1'}`} /></button>
+            </div>
+            {formData.hasInsurance && (
+              <div className="space-y-3">
+                {insuranceTypes.map(type => {
+                  const item = (formData.existingInsuranceDetails || []).find(i => i.type === type);
+                  return (
+                    <div key={type} className={`p-4 rounded-2xl border-2 ${item ? 'border-blue-200 bg-white' : 'border-gray-100 bg-gray-50'}`}>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-bold text-blue-900">{type}</span>
+                        <button onClick={() => {
+                          const current = formData.existingInsuranceDetails || [];
+                          setFormData({...formData, existingInsuranceDetails: item ? current.filter(i => i.type !== type) : [...current, {type, coverage:0}]});
+                        }} className={`w-6 h-6 rounded-full flex items-center justify-center ${item ? 'bg-blue-900 text-white' : 'bg-gray-200'}`}>{item ? <Check size={14}/> : <Plus size={14}/>}</button>
+                      </div>
+                      {item && <input type="text" inputMode="numeric" placeholder="ระบุทุนประกันรวม" className="w-full p-3 bg-blue-50/50 rounded-xl font-bold text-blue-900 outline-none text-sm" value={displayFormattedNumber(item.coverage)} onChange={e => {
+                        const next = formData.existingInsuranceDetails.map(i => i.type === type ? {...i, coverage: parseInputNumber(e.target.value)} : i);
+                        setFormData({...formData, existingInsuranceDetails: next});
+                      }} />}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </FormLayout>
+        );
+
+      case 'REVIEW':
+        const totalAssetsDetail = formData.assetCash + formData.assetStock + formData.assetProperty + formData.assetAlternative;
+        const totalDebtDetail = formData.debtHome + formData.debtCar + formData.debtPersonal;
+        return (
+          <div className="flex flex-col h-full bg-slate-50 p-6">
+            <h2 className="text-3xl font-black text-blue-900 mb-6">ตรวจสอบข้อมูล</h2>
+            <div className="flex-1 overflow-y-auto space-y-4">
+               <div className="bg-white p-6 rounded-[28px] shadow-sm border border-gray-100">
+                  <p className="text-[10px] font-black text-gray-400 uppercase mb-4">สถานะทางการเงิน</p>
+                  <div className="space-y-3">
+                    <div className="flex justify-between"><span className="text-sm font-bold text-slate-500">สินทรัพย์รวม</span><span className="text-sm font-black text-blue-900">{formatCurrency(totalAssetsDetail)}</span></div>
+                    <div className="flex justify-between"><span className="text-sm font-bold text-slate-500">หนี้สินรวม</span><span className="text-sm font-black text-red-600">{formatCurrency(totalDebtDetail)}</span></div>
+                    <div className="flex justify-between pt-2 border-t"><span className="text-sm font-bold text-slate-500">เงินออมต่อเดือน</span><span className="text-sm font-black text-green-600">{formatCurrency(formData.income - formData.expenses)}</span></div>
+                  </div>
+               </div>
+               <div className="bg-white p-6 rounded-[28px] shadow-sm border border-gray-100">
+                  <p className="text-[10px] font-black text-gray-400 uppercase mb-4">เป้าหมายและประกันเดิม</p>
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {formData.goals.map(g => <span key={g} className="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-bold">{g}</span>)}
+                  </div>
+                  <div className="space-y-1">
+                    {(formData.existingInsuranceDetails || []).map(i => (
+                      <div key={i.type} className="flex justify-between text-[11px] font-bold">
+                        <span className="text-gray-400">{i.type}</span>
+                        <span className="text-blue-900">{formatCurrency(i.coverage)}</span>
+                      </div>
+                    ))}
+                  </div>
+               </div>
+               <DeveloperCredit />
+            </div>
+            <div className="pt-6 space-y-3">
+              <button onClick={startAnalysis} className="w-full py-5 bg-blue-900 text-white rounded-[24px] font-black shadow-xl active:scale-95 transition-all">ยืนยันและวิเคราะห์ผล</button>
+              <button onClick={goBack} className="w-full py-4 text-gray-400 font-bold">ย้อนกลับแก้ไข</button>
+            </div>
+          </div>
+        );
+
+      case 'RESULTS': 
+        return (
+          <div className="flex flex-col h-full bg-slate-50">
+            <div className="bg-white px-2 py-3 flex space-x-2 border-b shadow-sm">
+              <button onClick={() => setSubMode('ANALYSIS')} className={`flex-1 py-3 text-xs font-black rounded-2xl transition-all ${subMode === 'ANALYSIS' ? 'bg-blue-900 text-white shadow-md' : 'bg-gray-50 text-gray-400'}`}>ผลการวิเคราะห์</button>
+              <button onClick={() => setSubMode('RECOMMEND')} className={`flex-1 py-3 text-xs font-black rounded-2xl transition-all ${subMode === 'RECOMMEND' ? 'bg-blue-900 text-white shadow-md' : 'bg-gray-50 text-gray-400'}`}>แผนประกันแนะนำ</button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {subMode === 'ANALYSIS' ? (
+                <div className="space-y-4">
+                  <div className="bg-white p-6 rounded-[32px] shadow-sm border border-gray-100 text-center">
+                    <h3 className="text-sm font-black text-blue-900/40 uppercase tracking-widest mb-4">Financial Health Score</h3>
+                    <div className="relative w-32 h-32 mx-auto mb-6">
+                        <div className="absolute inset-0 flex flex-col items-center justify-center z-10">
+                            <span className="text-4xl font-black text-blue-900">{(results.health.score + results.wealth.score)/2}</span>
+                            <span className="text-[10px] font-bold text-gray-400">เต็ม 100</span>
+                        </div>
+                        <svg className="w-full h-full -rotate-90">
+                            <circle cx="64" cy="64" r="58" fill="transparent" stroke="#f1f5f9" strokeWidth="12" />
+                            <circle cx="64" cy="64" r="58" fill="transparent" stroke="#004899" strokeWidth="12" strokeDasharray={Math.PI * 2 * 58} strokeDashoffset={Math.PI * 2 * 58 * (1 - (results.health.score + results.wealth.score)/200)} strokeLinecap="round" />
+                        </svg>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                        <div className="bg-blue-50 p-3 rounded-2xl text-center">
+                            <p className="text-[9px] font-black text-blue-400 mb-1">เจ็บ</p>
+                            <p className="text-sm font-black text-blue-900">{results.health.score}%</p>
+                        </div>
+                        <div className="bg-orange-50 p-3 rounded-2xl text-center">
+                            <p className="text-[9px] font-black text-orange-400 mb-1">จน</p>
+                            <p className="text-sm font-black text-orange-600">{results.wealth.score}%</p>
+                        </div>
+                        <div className="bg-green-50 p-3 rounded-2xl text-center">
+                            <p className="text-[9px] font-black text-green-400 mb-1">ตาย</p>
+                            <p className="text-sm font-black text-green-600">{Math.round(results.gap.ratio*100)}%</p>
+                        </div>
+                    </div>
+                  </div>
+                  <div className="bg-white p-6 rounded-[32px] shadow-sm border border-gray-100">
+                    <h3 className="text-sm font-black text-blue-900 mb-4 flex items-center uppercase tracking-widest">Risk Analysis Radar</h3>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <RadarChart cx="50%" cy="50%" outerRadius="80%" data={results.chartData}>
+                          <PolarGrid stroke="#e2e8f0" />
+                          <PolarAngleAxis dataKey="subject" tick={{fontSize: 12, fontWeight: '900', fill: '#64748b'}} />
+                          <Radar dataKey="A" stroke="#004899" fill="#004899" fillOpacity={0.5} />
+                        </RadarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4 pb-24">
+                  {results.products.map(prod => {
+                    const isSelected = selectedPlans.some(p => p.id === prod.id);
+                    return (
+                      <div key={prod.id} className={`p-6 rounded-[32px] border-2 transition-all cursor-pointer ${isSelected ? 'border-orange-500 bg-white shadow-xl scale-[1.02]' : 'border-gray-100 bg-white'}`} onClick={() => togglePlan(prod)}>
+                        <div className="flex justify-between items-start mb-3">
+                          <h4 className="text-lg font-black text-blue-900 leading-tight">{prod.name}</h4>
+                          {isSelected && <CheckCircle size={24} className="text-orange-500 shrink-0" />}
+                        </div>
+                        <div className={`p-4 rounded-2xl mb-4 ${isSelected ? 'bg-orange-50' : 'bg-gray-50'}`}>
+                          <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">ทุนประกันแนะนำ</p>
+                          <p className={`text-xl font-black ${isSelected ? 'text-orange-600' : 'text-blue-900'}`}>{formatCurrency(prod.coverage)}</p>
+                        </div>
+                        <p className="text-xs text-slate-500">{prod.reason}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <DeveloperCredit />
+            </div>
+            {subMode === 'RECOMMEND' && selectedPlans.length > 0 && (
+              <div className="p-4 bg-white border-t fixed bottom-0 left-0 right-0 max-w-md mx-auto z-50">
+                <button onClick={() => navigateTo('SUMMARY')} className="w-full py-4 bg-blue-900 text-white rounded-2xl font-black flex items-center justify-center space-x-2">
+                  <span>ดูสรุปแผนการเงินส่วนบุคคล ({selectedPlans.length})</span><ChevronRight size={20}/>
+                </button>
+              </div>
+            )}
+          </div>
+        );
+
+      case 'SUMMARY':
+        const assetTotal = results.totalAssets;
+        const debtTotal = results.totalDebt;
+        return (
+          <div className="flex flex-col h-full bg-white">
+            <div className="flex-1 overflow-y-auto p-6 space-y-8">
+              <div className="flex items-center space-x-4">
+                <div className="w-16 h-16 bg-blue-900 rounded-3xl flex items-center justify-center text-white shadow-xl">
+                  <User size={32} />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-black text-blue-900">{formData.name || 'คุณลูกค้า'}</h2>
+                  <p className="text-sm font-bold text-gray-400">อายุ {formData.age} ปี | {formData.gender}</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-[10px] font-black text-blue-900/40 uppercase tracking-[0.2em]">Financial Summary</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-slate-50 p-4 rounded-3xl border border-gray-100">
+                    <p className="text-[9px] font-black text-gray-400 uppercase mb-1">สินทรัพย์รวม</p>
+                    <p className="text-lg font-black text-blue-900">{formatCurrency(assetTotal)}</p>
+                  </div>
+                  <div className="bg-slate-50 p-4 rounded-3xl border border-gray-100">
+                    <p className="text-[9px] font-black text-gray-400 uppercase mb-1">หนี้สินรวม</p>
+                    <p className="text-lg font-black text-red-500">{formatCurrency(debtTotal)}</p>
+                  </div>
+                  <div className="col-span-2 bg-blue-900 p-5 rounded-3xl text-white flex justify-between items-center shadow-lg shadow-blue-900/20">
+                    <div>
+                      <p className="text-[9px] font-black text-blue-300 uppercase mb-1">เงินออมสุทธิ / เดือน</p>
+                      <p className="text-xl font-black">{formatCurrency(formData.income - formData.expenses)}</p>
+                    </div>
+                    <div className="bg-blue-800 p-2 rounded-xl"><DollarSign size={20}/></div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-[10px] font-black text-blue-900/40 uppercase tracking-[0.2em]">Analysis Results</h3>
+                <div className="bg-white rounded-3xl border-2 border-gray-50 p-6 space-y-6 shadow-sm">
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center space-x-3">
+                        <div className="w-10 h-10 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600"><HeartPulse size={20}/></div>
+                        <div><p className="text-[10px] font-black text-gray-400 uppercase">Health Score</p><p className="font-black text-blue-900">ระดับ: {results.health.label}</p></div>
+                    </div>
+                    <span className="text-2xl font-black text-blue-900">{results.health.score}%</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center space-x-3">
+                        <div className="w-10 h-10 bg-orange-50 rounded-2xl flex items-center justify-center text-orange-600"><TrendingUp size={20}/></div>
+                        <div><p className="text-[10px] font-black text-gray-400 uppercase">Wealth Score</p><p className="font-black text-blue-900">ระดับ: {results.wealth.label}</p></div>
+                    </div>
+                    <span className="text-2xl font-black text-orange-500">{results.wealth.score}%</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-[10px] font-black text-blue-900/40 uppercase tracking-[0.2em]">Proposed Insurance Plans</h3>
+                <div className="space-y-3">
+                  {selectedPlans.map(plan => (
+                    <div key={plan.id} className="group p-5 bg-white border-2 border-blue-900 rounded-[32px] flex justify-between items-center transition-all hover:shadow-xl shadow-blue-900/5">
+                      <div className="flex items-center space-x-4">
+                        <div className="w-12 h-12 bg-blue-900 rounded-2xl flex items-center justify-center text-white"><Shield size={24}/></div>
+                        <div>
+                          <p className="text-sm font-black text-blue-900">{plan.name}</p>
+                          <p className="text-[10px] font-bold text-gray-400 uppercase">ทุนประกัน: {formatCurrency(plan.coverage)}</p>
+                        </div>
+                      </div>
+                      <ChevronRight size={20} className="text-blue-900 group-hover:translate-x-1 transition-transform"/>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-orange-50 p-6 rounded-[32px] border border-orange-100 flex items-start space-x-4">
+                <div className="mt-1 text-orange-600"><Info size={24}/></div>
+                <div>
+                  <p className="font-black text-orange-900 text-sm mb-1">คำแนะนำถัดไป</p>
+                  <p className="text-xs text-orange-800 leading-relaxed font-bold">ข้อมูลนี้เป็นการวิเคราะห์เบื้องต้น แนะนำให้นำผลลัพธ์นี้ไปปรึกษาผู้เชี่ยวชาญของ TTB เพื่อปรับแต่งรายละเอียดเบี้ยประกันให้เหมาะสมกับงบประมาณของคุณ</p>
+                </div>
+              </div>
+
+              <DeveloperCredit />
+            </div>
+
+            <div className="p-6 bg-white border-t">
+              <button onClick={goHome} className="w-full py-5 bg-blue-900 text-white rounded-[24px] font-black flex items-center justify-center space-x-3 shadow-xl active:scale-95 transition-all">
+                <RefreshCw size={20}/>
+                <span>เริ่มการวิเคราะห์ใหม่</span>
+              </button>
+            </div>
+          </div>
+        );
+
+      default: return null;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-100 flex justify-center items-start sm:py-8">
+      <div className="w-full max-w-md bg-white sm:rounded-[40px] shadow-2xl relative flex flex-col h-[100dvh] sm:h-[800px] overflow-hidden">
+        {currentScreen !== 'HOME' && currentScreen !== 'SUMMARY' && <Header onHome={goHome} onBack={goBack} canGoBack={currentScreen !== 'RESULTS'} />}
+        <div className="flex-1 overflow-hidden relative">{renderScreen()}</div>
+      </div>
+    </div>
+  );
+}
+
